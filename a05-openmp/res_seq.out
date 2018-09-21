@@ -1,0 +1,9 @@
+  Call PRIME_NUMBER to count the primes from 5 to 500000.
+         N        Pi    Time
+         5         3  1
+        50        15  7
+       500        95  271
+      5000       669  14131
+     50000      5133  407384
+    500000     41538  33648909
+  Normal end of execution.
