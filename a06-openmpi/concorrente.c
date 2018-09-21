@@ -1,4 +1,24 @@
-/* Ali Husseinat - 9292966 */
+/* 
+--- GRUPO 2 ---
+Ali Husseinat - 9292966
+Andre Seiti Caniza - 9790923
+Danilo da Costa Telles Téo - 9293626
+Vitor Trevelin Xavier da Silva - 9791285
+Murilo Bernard Theodoro - 8532130
+Gabriel Toschi de Oliveira - 9763039
+
+--- PCAM ---
+Particionamento: 
+Se a matriz tem ordem N, teremos N^2 tarefas que tem como dados um dos valores da matriz e calculam a maior diferença entre seu dado e dos seus vizinhos. Também temos uma tarefa que inicia as outras tarefas e uma que recebe os valores calculados pelas outras tarefas e define a maior.
+
+Comunicação:
+Cada tarefa tem que comunicar-se com as tarefas que contém os valores do seu vizinho, além de mandar o resultado para a tarefa que calcula a maior das diferenças.
+
+Aglomeração:
+Para reduzir o overhead de comunicação, que, nesse caso, é gigante, nós algomeramos tarefas da seguinte forma: cada processo ficará com um bloco de linhas proporcional à razão de N pelo número de processos. Também aglomeramos as tarefas de criar as outras tarefas e a tarefa final com a tarefa que lê as primeiras linhas. Um ponto que vale destacar é a replicação das linhas adjacentes a cada bloco para reduzir ainda mais a comunicação.
+
+Mapeamento: O mapeamento foi feito em dois processos, o máximo permitido no uso do MPI pela máquina utilizada durante o desenvolvimento do algoritmo. Como parte do paradigma de passagem de mensagens, não há memória compartilhada entre os processos.
+*/
 
 #include<stdio.h>
 #include<stdlib.h>
@@ -8,16 +28,19 @@
 
 // Based on Author: Ana Caroline Spengler
 
+// função basica para calcular maximo entre dois numeros
 int max (int a, int b){
   if (a > b) return a;
   else return b;
 }
 
+// função basica para calcular minimo entre dois numeros
 int min (int a, int b){
   if (a < b) return a;
   else return b;
 }
 
+// para dar semântica aos índices do vetor de buffer entre os processos
 typedef enum vetorBuffer {
   DIFERENCA,
   MENORI,
@@ -34,6 +57,7 @@ int main(void){
     // Inicializando MPI
     MPI_Init(NULL, NULL);
 
+    // Coletando Rank e numero de processos gerados pelo MPI
     int noProcessos, meuRank;
     MPI_Comm_size(MPI_COMM_WORLD, &noProcessos);
     MPI_Comm_rank(MPI_COMM_WORLD, &meuRank);
@@ -51,10 +75,12 @@ int main(void){
     //Leitura do tamanho da matriz
     fscanf(arquivo_entrada, "%d\n", &tam);
 
+    // calculando quantas linhas da matriz cada processo calculara
     int tamanhoBloco = tam / noProcessos;
     int restoBloco = tam % noProcessos;
     int minRange = 0, maxRange = 0;
 
+    // calculando com quais linhas esse processo específico ficará
     if (meuRank < restoBloco) tamanhoBloco++;
     else {
       minRange += (restoBloco * (tamanhoBloco + 1));
@@ -64,13 +90,13 @@ int main(void){
     minRange += (tamanhoBloco * meuRank);
     maxRange += (tamanhoBloco * meuRank) + (tamanhoBloco - 1);
 
+    // calculando quais linhas o processo lerá do arquivo 
+    // (ele também lerá as vizinhas para diminuir comunicações entre processos)
     int minLeitura = max(minRange - 1, 0);
     int maxLeitura = min(maxRange + 1, tam - 1);
 
     //Matriz
     int **matriz=((int**)malloc((maxLeitura - minLeitura + 1)*sizeof(int*)));
-
-    printf("Rank %d | MinLeitura %d | MaxLeitura %d\n", meuRank, minLeitura, maxLeitura);
 
     //Alocação da matriz
     for(i = 0; i < (maxLeitura - minLeitura + 1); i++)
@@ -94,6 +120,7 @@ int main(void){
   //Poderia utilizar apenas os indices armazenados, colocados aqui por questões de clareza
   int valor_maior, valor_menor;
 
+  // calculando indices de linha que serao percorridos no bloco da matriz
   int start = (meuRank == 0) ? 0 : 1;
   int end = (meuRank == noProcessos - 1) ? tamanhoBloco - 1 : tamanhoBloco - 2;
 
@@ -130,15 +157,14 @@ int main(void){
   indice_i_maior += minLeitura;
   indice_i_menor += minLeitura;
 
-  //Escrita dos resultados no arquivo de saída no padrão solicitado pelo exemplo
-  printf("M[%d,%d]=%d M[%d,%d]=%d" ,indice_i_maior, indice_j_maior, valor_maior, indice_i_menor, indice_j_menor, valor_menor);
-
-
-  /*// criar vetor de buffer
+  // criar vetor de buffer
   int *buffer;
   MPI_Status status;
 
+  // caso nao seja o processo 0
   if (meuRank != 0){
+
+    // gere um buffer com os dados calculados no seu bloco
     buffer = (int *) malloc(sizeof(int)*TAMBUFFER);
     buffer[DIFERENCA] = diferenca;
     buffer[MENORI] = indice_i_menor;
@@ -148,11 +174,18 @@ int main(void){
     buffer[VALORMENOR] = valor_menor;
     buffer[VALORMAIOR] = valor_maior;
 
+    // envie ao processo 0
     MPI_Send(buffer, TAMBUFFER, MPI_INT, 0, meuRank, MPI_COMM_WORLD);
-  } else {
-    for (i = 1; i < noProcessos; i++){
-      MPI_Recv(buffer, TAMBUFFER, MPI_INT, i, i, MPI_COMM_WORLD, &status);
 
+  } else { // caso seja o processo 0
+
+    for (i = 1; i < noProcessos; i++){ // para cada outro processo
+
+      // receba o buffer criado pelo processo
+      buffer = (int *) malloc(sizeof(int)*TAMBUFFER);
+      MPI_Recv(buffer, TAMBUFFER, MPI_INT, i, i, MPI_COMM_WORLD, &status); 
+
+      // caso ele represente uma solução melhor, substitua
       if (buffer[DIFERENCA] > diferenca){
         diferenca = buffer[DIFERENCA];
         indice_i_menor = buffer[MENORI];
@@ -163,14 +196,14 @@ int main(void){
         valor_maior = buffer[VALORMAIOR];
       }
 
-      //free(buffer);
+      free(buffer);
       buffer = NULL;
     }
+
+    //Escrita dos resultados no arquivo de saída no padrão solicitado pelo exemplo
+    printf("M[%d,%d]=%d M[%d,%d]=%d" ,indice_i_maior, indice_j_maior, valor_maior, indice_i_menor, indice_j_menor, valor_menor);
   }
 
-  //Escrita dos resultados no arquivo de saída no padrão solicitado pelo exemplo
-  printf("M[%d,%d]=%d M[%d,%d]=%d" ,indice_i_maior, indice_j_maior, valor_maior, indice_i_menor, indice_j_menor, valor_menor);
-*/
   //Liberar a matriz
   for(i = 0; i < (maxLeitura - minLeitura + 1); i++)
     free(matriz[i]);
